@@ -10,8 +10,8 @@
     "@bigbangjs/notify": "<rootDir>/packages/core/src",
     "@bigbangjs/notify-(.*)": "<rootDir>/packages/$1/src"
   },
-  "testMatch": ["<rootDir>/packages/core/**/*.test.ts"],
-  "displayName": "File Storage Core",
+  "testMatch": ["<rootDir>/packages/vonage/**/*.test.ts"],
+  "displayName": "Notify Vonage",
   "testEnvironment": "node",
   "modulePathIgnorePatterns": [
     "dist/package.json",

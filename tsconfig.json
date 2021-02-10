@@ -5,6 +5,9 @@
             "@bigbangjs/notify": [
                 "./packages/core/src"
             ],
+            "@bigbangjs/notify-(.*)": [
+                "./packages/$1/src"
+            ],
         }
     },
     "exclude": [

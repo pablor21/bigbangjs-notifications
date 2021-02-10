@@ -1,7 +1,7 @@
 {
-	"name": "@bigbangjs/notify",
+	"name": "@bigbangjs/notify-vonage",
 	"version": "0.0.1",
-	"description": "Notification engine for nodejs",
+	"description": "Vonage transport for @bigbangjs/notify",
 	"main": "dist/index.js",
 	"author": {
 		"name": "Pablo Ramirez",
@@ -28,9 +28,14 @@
 		"compile": "tsc -p tsconfig.build.json",
 		"test": "jest --config jestconfig.json --runInBand"
 	},
-	"optionalDependencies": {},
-	"dependencies": {},
+	"peerDependencies": {
+		"@bigbangjs/notify": "^0.0.1"
+	},
+	"dependencies": {
+		"@vonage/server-sdk": "^2.10.5"
+	},
 	"devDependencies": {
+		"@bigbangjs/notify": "^0.0.1",
 		"eslint-config-prettier": "^7.2.0",
 		"eslint-plugin-prettier": "^3.3.1",
 		"jest": "^26.6.3",
