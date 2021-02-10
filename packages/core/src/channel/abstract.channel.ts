@@ -31,11 +31,11 @@ export abstract class AbstractChannel<ConfigType extends NotificationChannelConf
     }
 
     protected getMethodName(): string {
-        return camelize(`to ${this.name}`);
+        return camelize(`to ${this.type}`);
     }
 
     protected async getRecipient(notifiable: INotifiable): Promise<any> {
-        return notifiable.getRouteFor(this.name);
+        return notifiable.getRouteFor(this.type, this);
     }
 
     protected async getMessage<T>(notifiable: INotifiable, notification: INotification, messageType: ClassType<T>): Promise<T> {

@@ -18,8 +18,8 @@ export class AnonymousNotifiable implements INotifiable {
         return this;
     }
 
-    public getRouteFor<RecipientType = any>(transport: string | INotificationChannel): Promise<RecipientType> {
-        return this.routes.get(typeof (transport) === 'string' ? transport : transport.name);
+    public getRouteFor<RecipientType = any>(channel: string, channelInstance?: INotificationChannel): Promise<RecipientType> {
+        return this.routes.get(channel);
     }
 
     public async notify(notification: INotification): Promise<void> {
