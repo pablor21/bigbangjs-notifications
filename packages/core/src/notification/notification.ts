@@ -3,7 +3,7 @@ import { INotifiable } from '../notifiable';
 import { NotificationManager } from '../notification.manager';
 import { INotification } from './notification.interface';
 
-export abstract class AbstractNotification implements INotification {
+export abstract class Notification implements INotification {
 
     public manager: NotificationManager;
     public channels: string[] = [];
@@ -14,7 +14,13 @@ export abstract class AbstractNotification implements INotification {
     }
 
 
-    public async getChannels(notifiable: INotifiable): Promise<string[]> {
+    /**
+     * Obtains the available channels for the notification
+     * You may use the notifiable object to determine wich channels
+     * are available for the notifiable
+     * @param notifiable the notifiable object
+     */
+    public async getChannelsFor(notifiable: INotifiable): Promise<string[]> {
         return this.channels;
     }
 

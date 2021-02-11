@@ -28,9 +28,11 @@
 		"compile": "tsc -p tsconfig.build.json",
 		"test": "jest --config jestconfig.json --runInBand"
 	},
-	"optionalDependencies": {},
-	"dependencies": {},
+	"dependencies": {
+		"serialize-javascript": "^5.0.1"
+	},
 	"devDependencies": {
+		"@types/serialize-javascript": "^5.0.0",
 		"eslint-config-prettier": "^7.2.0",
 		"eslint-plugin-prettier": "^3.3.1",
 		"jest": "^26.6.3",

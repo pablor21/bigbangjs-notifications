@@ -1,7 +1,11 @@
 import { INotificationChannel } from '../channel';
-import { NotificationManager } from '../notification.manager';
+import { INotification } from '../notification';
 
 export interface INotifiable {
-    setNotificationManager(manager: NotificationManager): void;
-    getRouteFor<RecipientType = any>(type: string, channelInstance?: INotificationChannel): Promise<RecipientType>;
+    /**
+     * Obtains the recipient for the channel and notification object
+     * @param channel the notification chanel
+     * @param notification the notification object
+     */
+    getRouteFor<RecipientType = any>(channel: string | INotificationChannel, notification: INotification): Promise<RecipientType>;
 }

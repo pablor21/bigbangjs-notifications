@@ -16,7 +16,7 @@
             "name": "Debug Jest Tests Email",
             "type": "node",
             "request": "launch",
-            "runtimeArgs": ["--inspect-brk", "${workspaceRoot}/node_modules/.bin/jest", "--config", "jestconfig.json", "--runInBand", "--projects", "packages/email/jestconfig.json"],
+            "runtimeArgs": ["--inspect-brk", "${workspaceRoot}/node_modules/.bin/jest", "--config", "jestconfig.json", "--runInBand", "--projects", "packages/email/jestconfig.json", "--detectOpenHandles"],
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen"
         },

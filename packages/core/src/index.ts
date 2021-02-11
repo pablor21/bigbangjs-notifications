@@ -5,3 +5,4 @@ export * from './notifiable';
 export * from './channel';
 export * from './notification.manager';
 export * from './types';
+export * from './queue';

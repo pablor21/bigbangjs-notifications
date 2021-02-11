@@ -8,6 +8,6 @@ export interface INotification {
      * Obtains the channels for the notifiable
      * @param notifiable the notifiable object
      */
-    getChannels(notifiable: INotifiable): Promise<string[]>;
+    getChannelsFor(notifiable: INotifiable): Promise<string[]>;
 
 }

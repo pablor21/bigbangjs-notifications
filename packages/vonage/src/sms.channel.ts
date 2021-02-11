@@ -1,5 +1,5 @@
 /* eslint-disable dot-notation */
-import { INotifiable, INotification, AbstractChannel, INotificationChannel, NotifyExceptionType, objectNull, throwError, NotificationManager, ClassType } from '@bigbangjs/notify';
+import { INotifiable, INotification, AbstractChannel, INotificationChannel, NotifyExceptionType, objectNull, throwError, NotificationManager, ClassType, NotificationResult } from '@bigbangjs/notify';
 import Vonage from '@vonage/server-sdk';
 import { SmsMessage } from './sms.message';
 import { SmsParams, VonageChannelOptions } from './types';
@@ -13,11 +13,11 @@ export class SmsChannel extends AbstractChannel<VonageChannelOptions> implements
         this._client = new Vonage(this.config);
     }
 
-    public async send(notifiable: INotifiable, notification: INotification): Promise<any> {
-        // default params
+
+    public async prepare(notifiable: INotifiable, notification: INotification): Promise<any> {
         const params: Partial<SmsParams> = {
             from: this.config.from,
-            to: await notifiable.getRouteFor(this.name),
+            to: await this.getRecipient(notifiable, notification),
         };
 
         const message = await super.getMessage<SmsMessage>(notifiable, notification, SmsMessage);
@@ -25,17 +25,33 @@ export class SmsChannel extends AbstractChannel<VonageChannelOptions> implements
             return;
         }
         Object.assign(params, message.params);
-        return new Promise((resolve, reject) => this._client.message.sendSms(params.from, params.to, params.text, params.options, (err, res) => {
-            if (err) {
-                reject(err);
-            } else {
-                if (res.messages[0].status !== '0') {
-                    reject(res.messages[0]['error-text']);
+        return params;
+    }
+
+    public async send(params: any): Promise<NotificationResult> {
+        // default params
+        const response = await (new Promise((resolve, reject) => {
+            this._client.message.sendSms(params.from, params.to, params.text, params.options, (err, res) => {
+                if (err) {
+                    reject(err);
                 } else {
-                    resolve(res);
+                    if (res.messages[0].status !== '0') {
+                        reject(res.messages[0]);
+                    } else {
+                        resolve(res);
+                    }
                 }
-            }
+            });
         }));
+        const success = true;
+        return {
+            type: 'SENT',
+            params,
+            success,
+            channel: this,
+            nativeResponse: response,
+        };
+
     }
 
 }

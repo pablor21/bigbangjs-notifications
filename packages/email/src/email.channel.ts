@@ -1,5 +1,5 @@
 /* eslint-disable dot-notation */
-import { INotifiable, INotification, INotificationChannel, NotifyExceptionType, objectNull, throwError, NotificationManager, AbstractChannel } from '@bigbangjs/notify';
+import { INotifiable, INotification, INotificationChannel, NotifyExceptionType, objectNull, throwError, NotificationManager, AbstractChannel, NotificationResult } from '@bigbangjs/notify';
 import { createTransport } from 'nodemailer';
 import Mail from 'nodemailer/lib/mailer';
 import { EmailMessage } from './email.message';
@@ -13,11 +13,10 @@ export class EmailChannel extends AbstractChannel<EmailChannelConfig> implements
         this._client = createTransport(this.config.transport);
     }
 
-    public async send(notifiable: INotifiable, notification: INotification): Promise<any> {
-        // default params
+    public async prepare(notifiable: INotifiable, notification: INotification): Promise<any> {
         const params: Partial<Mail.Options> = {
             from: `${this.config.fromName} ${this.config.from}`,
-            to: await notifiable.getRouteFor(this.name),
+            to: await this.getRecipient<string | Mail.Address | (string | Mail.Address)[]>(notifiable, notification),
         };
 
         const message = await super.getMessage<EmailMessage>(notifiable, notification, EmailMessage);
@@ -25,7 +24,21 @@ export class EmailChannel extends AbstractChannel<EmailChannelConfig> implements
             return;
         }
         Object.assign(params, message.params);
-        return this._client.sendMail(params);
+        return params;
+    }
+
+    public async send(params: any): Promise<NotificationResult> {
+        // default params
+        const response = await this._client.sendMail(params);
+        const success = response?.accepted?.length > 0;
+
+        return {
+            type: 'SENT',
+            params,
+            success,
+            channel: this,
+            nativeResponse: response,
+        };
     }
 
 }

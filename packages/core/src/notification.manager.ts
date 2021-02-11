@@ -1,25 +1,30 @@
 import { VALID_TRANSPORTS_NAMES_REGEX } from './constants';
 import { NotifyExceptionType, throwError } from './exceptions';
-import { ConsoleLogger, LoggerType, Registry } from './lib';
+import { ConsoleLogger, LoggerType, objectNull, Registry } from './lib';
 import { INotifiable } from './notifiable';
-import { AnonymousNotifiable } from './notifiable/anonymous.notifiable';
 import { INotification } from './notification';
 import { INotificationChannel, NotificationChannelClassType, NotificationChannelConfig } from './channel';
-import { NotificationManagerConfig } from './types';
+import { NotificationEventTypes, NotificationManagerConfig, NotificationResult } from './types';
+import { EventEmitter } from 'events';
+import { NotificationRequest } from './notification.request';
+import { IQueue } from './queue';
 
 const defaultConfigOptions: NotificationManagerConfig = {
     logger: ConsoleLogger,
     autoInitProviders: true,
+    defaultQueueName: 'default',
 };
 
-export class NotificationManager {
+export class NotificationManager extends EventEmitter {
 
     public static channelTypes: Registry<string, NotificationChannelClassType<INotificationChannel>> = new Registry();
     public readonly config: NotificationManagerConfig;
     protected readonly channels: Registry<string, INotificationChannel> = new Registry();
+    protected readonly queues: Registry<string, IQueue> = new Registry();
 
 
     constructor(config?: Partial<NotificationManagerConfig>) {
+        super();
         this.config = Object.assign({}, defaultConfigOptions, config || {});
         this.log('info', `Notification manager initialized!`);
     }
@@ -108,31 +113,216 @@ export class NotificationManager {
         return new ctor(this, config);
     }
 
+    public addQueue(name: string, queue: IQueue): void {
+        this.queues.add(name, queue, true);
+    }
 
-    /**
-     * Send notification
-     * @param notification the notification object
-     */
-    public async notify(notifiable: INotifiable, notification: INotification): Promise<void> {
-        const channels = await notification.getChannels(notifiable);
-        const promises = channels.map(async c => {
-            if (this.channels.has(c)) {
-                return this.channels.get(c).send(notifiable, notification);
-            }
-        });
-        await Promise.all(promises);
+    public removeQueue(name: string): void {
+        this.queues.remove(name);
+    }
+
+    public getQueue(name: string): IQueue {
+        return this.queues.get(name);
     }
 
     /**
-     * Routes an anonymous notifiable
-     * @param channel the channel name
-     * @param recipient the recipient config
+     * Prepare a notification request to send
+     * @param methodToCall the method to call in the channel
+     * @param request the notification request
+     * @param channels the channels
      */
-    public route(channel: string | INotificationChannel, recipient: any): AnonymousNotifiable {
-        channel = typeof (channel) === 'string' ? channel : channel.name;
-        const notifiable = (new AnonymousNotifiable());
-        notifiable.setNotificationManager(this);
-        return notifiable.route(channel, recipient);
+    protected async prepareToSend(method: 'prepare' | 'serializeData', request: NotificationRequest, channels?: (string | INotificationChannel)[]) {
+        if (channels) {
+            if (!Array.isArray(channels)) {
+                channels = [channels];
+            }
+        } else {
+            channels = [];
+        }
+        const notifiables = request.notifiables;
+        if (!notifiables) {
+            this.log('warn', `No recipients for notification ${request.notification}`);
+            return null;
+        }
+        if (!Array.isArray(request.notifiables)) {
+            request.notifiables = [request.notifiables];
+        }
+        const channelsToSend = {};
+        await Promise.all((notifiables as INotifiable[]).map(async (notifiable: INotifiable) => {
+            const channels = (await request.notification.getChannelsFor(notifiable));
+            channels.map(c => {
+                if (undefined === channelsToSend[c]) {
+                    channelsToSend[c] = [];
+                }
+                channelsToSend[c].push(notifiable);
+            });
+        }));
+
+        // array of promises to resolve
+        const promises: any[] = [];
+        // filter only valid channels
+        Object.keys(channelsToSend).filter(k => this.channels.has(k)).map(channelName => {
+            const channel = this.channels.get(channelName);
+            const recipients = channelsToSend[channelName];
+            recipients.map((notifiable: INotifiable) => {
+                // add the send request to the promises array
+                promises.push({
+                    channel,
+                    notifiable,
+                    notification: request.notification,
+                    promise: channel[method](notifiable, request.notification),
+                });
+            });
+        });
+        return promises;
+    }
+
+    public async processQueuedNotification(data: any): Promise<void> {
+        try {
+            this.log('info', `Processing notification on ${data.channel} ${data.data}`);
+            const channel = this.getChannel(data.channel);
+            const params = await channel.unserializeData(data.data);
+            await channel.send(params);
+            this.log('info', `Processed notification on ${data.channel} ${data.data}`);
+        } catch (ex) {
+            this.log('error', `Error processing ${data.channel} ${data.data}`);
+            throwError(ex.message, NotifyExceptionType.UNKNOWN_ERROR, ex);
+        }
+    }
+
+    /**
+     * Send notification request
+     * This is an atomic operation, if one of the channels is
+     * unable to sent a notification, the loop will continue
+     * and the error will be kept in the result array
+     * If the notification object is a queueable object, the
+     * method will create the needed jobs
+     * @param request the notification request object
+     * @param channels only send on the setted channels
+     */
+    public async send(request: NotificationRequest, channels?: (string | INotificationChannel)[]): Promise<NotificationResult[]> {
+        if (objectNull(request) || !(request instanceof NotificationRequest)) {
+            throwError(`Invalid notification request!`, NotifyExceptionType.INVALID_PARAMS, { request });
+        }
+
+        // eslint-disable-next-line dot-notation
+        if (request.notification['shouldQueue']) {
+            // eslint-disable-next-line dot-notation
+            const queueName = request.notification['queueName'] === 'default' ? this.config.defaultQueueName : request.notification['queueName'];
+            let queue = this.getQueue(queueName);
+            if (!queue) {
+                queue = this.getQueue(this.config.defaultQueueName);
+            }
+            if (queue) {
+                const promises = await this.prepareToSend('serializeData', request, channels);
+                const results: NotificationResult[] = [];
+                // resolve all promises and return
+                await Promise.all(promises.map(async p => {
+                    try {
+                        const params = await p.promise;
+                        const queueData = {
+                            channel: p.channel.name,
+                            data: params,
+                        };
+
+
+                        const queueResponse = await queue.push(queueData);
+
+                        const result: NotificationResult = {
+                            type: 'QUEUED',
+                            channel: p.channel,
+                            success: true,
+                            params,
+                            nativeResponse: queueResponse,
+                        };
+                        this.emit(NotificationEventTypes.NOTIFICATION_QUEUED, result);
+                        results.push(result);
+                    } catch (ex) { // if the promise throws an exception, keep track of it and continue
+                        const result: NotificationResult = {
+                            type: 'ERROR',
+                            channel: p.channel,
+                            success: false,
+                            nativeResponse: ex,
+                            params: {},
+                        };
+                        this.emit(NotificationEventTypes.NOTIFICATION_QUEUE_ERROR, result);
+                        results.push(result);
+                    }
+                }));
+                return results;
+            }
+            // eslint-disable-next-line dot-notation
+            this.log('warn', `No queue named '${queueName}' sending the notification now...`);
+
+        }
+        return await this.sendNow(request, channels);
+    }
+
+    /**
+     * Send notification request instantly, ignoring if the
+     * notification is queueable or not
+     * This is an atomic operation, if one of the channels is
+     * unable to sent a notification, the loop will continue
+     * and the error will be kept in the result array
+     * If the notification object is a queueable object, the
+     * method will create the needed jobs
+     * @param request the notification request object
+     * @param channels only send on the setted channels
+     */
+    public async sendNow(request: NotificationRequest, channels?: (string | INotificationChannel)[]): Promise<NotificationResult[]> {
+        // array of promises to resolve
+        const promises = await this.prepareToSend('prepare', request, channels);
+
+        const results: NotificationResult[] = [];
+        // resolve all promises and return
+        await Promise.all(promises.map(async p => {
+            try {
+                const params = await p.promise;
+                const r = await p.channel.send(params);
+                if (r.success) {
+                    this.emit(NotificationEventTypes.NOTIFICATION_SENT, r);
+                } else {
+                    this.emit(NotificationEventTypes.NOTIFICATION_SEND_ERROR, r);
+                }
+                results.push(r);
+            } catch (ex) { // if the promise throws an exception, keep track of it and continue
+                const r: NotificationResult = {
+                    type: 'ERROR',
+                    channel: p.channel,
+                    success: false,
+                    nativeResponse: ex,
+                    params: {},
+                };
+                this.emit(NotificationEventTypes.NOTIFICATION_SEND_ERROR, r);
+                return results.push(r);
+            }
+        }));
+        return results;
+    }
+
+    /**
+     * Creates a notification request with the desired notifiables
+     * @param notifiables the notifiable objects
+     */
+    public for(notifiables: INotifiable | INotifiable[]): NotificationRequest {
+        return this.request(notifiables);
+    }
+
+    /**
+     * Creates a notification request with the desired notification object
+     * @param notification the notification object
+     */
+    public notify(notification: INotification): NotificationRequest {
+        return this.request([], notification);
+    }
+
+    /**
+     * Creates a notification request with the desired notifiables and notification
+     * @param notifiables the notifiables objects
+     * @param notification the notification
+     */
+    public request(notifiables?: INotifiable | INotifiable[], notification?: INotification): NotificationRequest {
+        return new NotificationRequest(this, notifiables, notification);
     }
 
 }

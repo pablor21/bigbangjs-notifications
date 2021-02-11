@@ -1,8 +1,8 @@
-import { NotificationManager, AbstractNotification, INotifiable, joinPath } from '@bigbangjs/notify/src';
+import { NotificationManager, GenericNotifiable, Notification, INotifiable, joinPath } from '@bigbangjs/notify';
 import { SmsChannel, SmsMessage } from '../src';
 import fs from 'fs';
 
-class TestNotification extends AbstractNotification {
+class TestNotification extends Notification {
 
     constructor() {
         super();
@@ -30,6 +30,13 @@ describe('Test vonage transport', () => {
             ...credentials,
         });
 
-        await manager.route('sms', credentials.testNumbers[0]).notify(new TestNotification());
+        const recipients: any[] = [];
+        for (const i in credentials.testNumbers) {
+            recipients.push(new GenericNotifiable().route('sms', credentials.testNumbers[i]));
+        }
+
+
+        const results = await manager.for(recipients).notify(new TestNotification()).send();
+
     });
 });
