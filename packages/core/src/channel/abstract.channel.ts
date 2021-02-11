@@ -152,7 +152,7 @@ export abstract class AbstractChannel<DataType extends NotificationChannelDataTy
 
         // split the data in chunks
         const chunks = notifiables.reduce((all, one, i) => {
-            const ch = Math.floor(i / this.config.bulkSize);
+            const ch = Math.floor(i / this.config.bulkSize || 1);
             all[ch] = [].concat((all[ch] || []), one);
             return all;
         }, []);

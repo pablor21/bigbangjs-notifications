@@ -23,12 +23,15 @@ export type NotificationManagerConfig = {
     autoInitProviders: boolean;
 
     defaultQueueName?: string;
+    maxQueueRetries?: number;
 };
 
 export type NotificationResult = {
     type: 'SENT' | 'QUEUED' | 'ERROR';
     params: any;
     channel: INotificationChannel;
+    recipients: any[];
+    shouldRetry: boolean;
     success: boolean;
     nativeResponse?: any;
 };

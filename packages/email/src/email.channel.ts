@@ -46,7 +46,9 @@ export class EmailChannel extends AbstractChannel<NotificationChannelDataType, E
                 response.push({
                     type: 'ERROR',
                     params,
+                    recipients: [params.to],
                     success: false,
+                    shouldRetry: true,
                     channel: this,
                     nativeResponse: ex,
                 });
@@ -57,17 +59,31 @@ export class EmailChannel extends AbstractChannel<NotificationChannelDataType, E
 
 
     public async send(params: any): Promise<NotificationResult> {
-        // default params
-        const response = await this._client.sendMail(params);
-        const success = response?.accepted?.length > 0;
+        try {
+            // default params
+            const response = await this._client.sendMail(params);
+            const success = response?.accepted?.length > 0;
 
-        return {
-            type: 'SENT',
-            params,
-            success,
-            channel: this,
-            nativeResponse: response,
-        };
+            return {
+                type: 'SENT',
+                params,
+                shouldRetry: false,
+                recipients: [params.to],
+                success,
+                channel: this,
+                nativeResponse: response,
+            };
+        } catch (ex) {
+            return {
+                type: 'ERROR',
+                params,
+                recipients: [params.to],
+                success: false,
+                shouldRetry: true,
+                channel: this,
+                nativeResponse: ex,
+            };
+        }
     }
 
 }

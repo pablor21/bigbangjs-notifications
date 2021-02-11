@@ -13,6 +13,7 @@ const defaultConfigOptions: NotificationManagerConfig = {
     logger: ConsoleLogger,
     autoInitProviders: true,
     defaultQueueName: 'default',
+    maxQueueRetries: 3,
 };
 
 export class NotificationManager extends EventEmitter {
@@ -201,6 +202,50 @@ export class NotificationManager extends EventEmitter {
             } else {
                 result = await channel.send(params);
             }
+            if (!Array.isArray(result)) {
+                result = [result];
+            }
+            const toRequeue: any[] = [];
+            result.map(r => {
+                if (r.type === 'SENT') {
+                    this.emit(NotificationEventTypes.NOTIFICATION_SENT, r);
+                } else {
+                    this.emit(NotificationEventTypes.NOTIFICATION_SEND_ERROR, r);
+                    if (r.shouldRetry) {
+                        toRequeue.push(r);
+                    }
+                }
+            });
+
+            if (toRequeue.length > 0) {
+                this.log('warn', `Some recipients could not been notified, re enqueueing`);
+                if (!data.data.isBulk) {
+                    if (data.retries > 0) {
+                        const r = {
+                            isBulk: data.isBulk,
+                            ...data,
+                            retries: data.retries - 1,
+                        };
+                        await this.getQueue(data.queue).push(r);
+                    }
+                } else {
+                    if (data.retries > 0) {
+                        const recipients: any[] = toRequeue.reduce((all, current) => {
+                            return all.concat(current.recipients);
+                        }, []);
+                        const r = {
+                            ...data,
+                            data: {
+                                ...data.data,
+                                recipients,
+                            },
+                            retries: data.retries - 1,
+                        };
+                        await this.getQueue(data.queue).push(r);
+                    }
+                }
+            }
+
             this.log('info', `Processed notification on ${data.channel} ${data.data}`);
         } catch (ex) {
             this.log('error', `Error processing ${data.channel} ${data.data}`);
@@ -248,6 +293,8 @@ export class NotificationManager extends EventEmitter {
                             const queueData = {
                                 channel: p.channel.name,
                                 data: await p.channel.serializeData(param),
+                                retries: this.config.maxQueueRetries,
+                                queue: queueName,
                             };
 
 
@@ -255,6 +302,8 @@ export class NotificationManager extends EventEmitter {
                             const result: NotificationResult = {
                                 type: 'QUEUED',
                                 channel: p.channel,
+                                recipients: [],
+                                shouldRetry: true,
                                 success: true,
                                 params,
                                 nativeResponse: queueResponse,
@@ -267,7 +316,9 @@ export class NotificationManager extends EventEmitter {
                     } catch (ex) { // if the promise throws an exception, keep track of it and continue
                         const result: NotificationResult = {
                             type: 'ERROR',
+                            recipients: [],
                             channel: p.channel,
+                            shouldRetry: true,
                             success: false,
                             nativeResponse: ex,
                             params: {},
@@ -315,7 +366,9 @@ export class NotificationManager extends EventEmitter {
             } catch (ex) { // if the promise throws an exception, keep track of it and continue
                 const r: NotificationResult = {
                     type: 'ERROR',
+                    recipients: Array.isArray(request.notifiables) ? request.notifiables : [request.notifiables],
                     channel: p.channel,
+                    shouldRetry: true,
                     success: false,
                     nativeResponse: ex,
                     params: {},

@@ -1,8 +1,9 @@
+import { IMessage } from '@bigbangjs/notify';
 import { SendSmsOptions } from '@vonage/server-sdk';
 import { SmsParams } from './types';
 
 
-export class SmsMessage {
+export class SmsMessage implements IMessage {
 
     public params: Partial<SmsParams> = {};
 
@@ -25,5 +26,10 @@ export class SmsMessage {
         this.params.options = options;
         return this;
     }
+
+    public async getDataForChannel(): Promise<any> {
+        return this.params;
+    }
+
 
 }
