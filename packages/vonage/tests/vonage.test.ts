@@ -37,6 +37,6 @@ describe('Test vonage transport', () => {
 
 
         const results = await manager.for(recipients).notify(new TestNotification()).send();
-
+        expect(results).toHaveLength(1);
     });
 });

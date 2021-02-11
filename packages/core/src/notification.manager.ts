@@ -6,7 +6,7 @@ import { INotification } from './notification';
 import { INotificationChannel, NotificationChannelClassType, NotificationChannelConfig } from './channel';
 import { NotificationEventTypes, NotificationManagerConfig, NotificationResult } from './types';
 import { EventEmitter } from 'events';
-import { NotificationRequest } from './notification.request';
+import { NotificationRequest } from './notification/notification.request';
 import { IQueue } from './queue';
 
 const defaultConfigOptions: NotificationManagerConfig = {
@@ -131,7 +131,7 @@ export class NotificationManager extends EventEmitter {
      * @param request the notification request
      * @param channels the channels
      */
-    protected async prepareToSend(method: 'prepare' | 'serializeData', request: NotificationRequest, channels?: (string | INotificationChannel)[]) {
+    protected async prepareToSend(method: 'prepare', request: NotificationRequest, channels?: (string | INotificationChannel)[]) {
         if (channels) {
             if (!Array.isArray(channels)) {
                 channels = [channels];
@@ -161,19 +161,32 @@ export class NotificationManager extends EventEmitter {
         // array of promises to resolve
         const promises: any[] = [];
         // filter only valid channels
-        Object.keys(channelsToSend).filter(k => this.channels.has(k)).map(channelName => {
+        await Promise.all(Object.keys(channelsToSend).filter(k => this.channels.has(k)).map(async channelName => {
             const channel = this.channels.get(channelName);
             const recipients = channelsToSend[channelName];
-            recipients.map((notifiable: INotifiable) => {
+            const isBulk = await request.notification.isBulkFor(channel);
+            // eslint-disable-next-line dot-notation
+            if (isBulk && typeof (channel['prepareBulk']) === 'function') {
                 // add the send request to the promises array
                 promises.push({
                     channel,
-                    notifiable,
+                    isBulk,
                     notification: request.notification,
-                    promise: channel[method](notifiable, request.notification),
+                    // eslint-disable-next-line dot-notation
+                    promise: channel['prepareBulk'](notifiables, request.notification),
                 });
-            });
-        });
+            } else {
+                recipients.map((notifiable: INotifiable) => {
+                    // add the send request to the promises array
+                    promises.push({
+                        channel,
+                        notifiable,
+                        notification: request.notification,
+                        promise: channel.prepare(notifiable, request.notification),
+                    });
+                });
+            }
+        }));
         return promises;
     }
 
@@ -182,7 +195,12 @@ export class NotificationManager extends EventEmitter {
             this.log('info', `Processing notification on ${data.channel} ${data.data}`);
             const channel = this.getChannel(data.channel);
             const params = await channel.unserializeData(data.data);
-            await channel.send(params);
+            let result;
+            if (params.isBulk) {
+                result = await channel.sendBulk(params);
+            } else {
+                result = await channel.send(params);
+            }
             this.log('info', `Processed notification on ${data.channel} ${data.data}`);
         } catch (ex) {
             this.log('error', `Error processing ${data.channel} ${data.data}`);
@@ -214,29 +232,38 @@ export class NotificationManager extends EventEmitter {
                 queue = this.getQueue(this.config.defaultQueueName);
             }
             if (queue) {
-                const promises = await this.prepareToSend('serializeData', request, channels);
+
+                const promises = await this.prepareToSend('prepare', request, channels);
                 const results: NotificationResult[] = [];
                 // resolve all promises and return
                 await Promise.all(promises.map(async p => {
                     try {
-                        const params = await p.promise;
-                        const queueData = {
-                            channel: p.channel.name,
-                            data: params,
-                        };
+                        let params = await p.promise;
+
+                        if (!Array.isArray(params)) {
+                            params = [params];
+                        }
+
+                        await Promise.all(params.map(async (param: any) => {
+                            const queueData = {
+                                channel: p.channel.name,
+                                data: await p.channel.serializeData(param),
+                            };
 
 
-                        const queueResponse = await queue.push(queueData);
+                            const queueResponse = await queue.push(queueData);
+                            const result: NotificationResult = {
+                                type: 'QUEUED',
+                                channel: p.channel,
+                                success: true,
+                                params,
+                                nativeResponse: queueResponse,
+                            };
+                            this.emit(NotificationEventTypes.NOTIFICATION_QUEUED, result);
+                            results.push(result);
+                        }));
 
-                        const result: NotificationResult = {
-                            type: 'QUEUED',
-                            channel: p.channel,
-                            success: true,
-                            params,
-                            nativeResponse: queueResponse,
-                        };
-                        this.emit(NotificationEventTypes.NOTIFICATION_QUEUED, result);
-                        results.push(result);
+
                     } catch (ex) { // if the promise throws an exception, keep track of it and continue
                         const result: NotificationResult = {
                             type: 'ERROR',

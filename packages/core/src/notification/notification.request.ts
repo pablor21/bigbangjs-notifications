@@ -1,8 +1,8 @@
-import { INotificationChannel } from './channel';
-import { INotifiable } from './notifiable';
-import { NotificationManager } from './notification.manager';
-import { INotification } from './notification/notification.interface';
-import { IQueueNotificaton } from './notification/queueablenotification.interface';
+import { INotificationChannel } from '../channel';
+import { INotifiable } from '../notifiable';
+import { NotificationManager } from '../notification.manager';
+import { INotification } from './notification.interface';
+import { IQueueNotificaton } from './queueablenotification.interface';
 
 export class NotificationRequest {
 

@@ -1,15 +1,19 @@
-import { NotificationManager, QueueableNotification, SyncQueue, GenericNotifiable, INotifiable, joinPath } from '@bigbangjs/notify';
+import { NotificationManager, QueueableNotification, SyncQueue, GenericNotifiable, INotifiable, joinPath, INotificationChannel } from '@bigbangjs/notify';
 import { EmailChannel } from '../src';
 import { EmailMessage } from '../src/email.message';
 import fs from 'fs';
 class TestNotification extends QueueableNotification {
 
-    constructor() {
+    constructor(public isBulk = false) {
         super();
         this.channels = ['mail'];
     }
 
-    toMail(notifiable: INotifiable, channel: EmailChannel): EmailMessage {
+    public async isBulkFor(channel: INotificationChannel): Promise<boolean> {
+        return this.isBulk;
+    }
+
+    toMail(channel: EmailChannel): EmailMessage {
         return (new EmailMessage())
             .subject('test')
             .text(`This is the text version of the message`)
@@ -26,7 +30,7 @@ describe('Test email transport', () => {
         const syncQueue = new SyncQueue();
 
         const manager = new NotificationManager({});
-        syncQueue.process(async (data)=>{
+        syncQueue.process(async (data) => {
             await manager.processQueuedNotification(data);
         });
 
@@ -47,5 +51,12 @@ describe('Test email transport', () => {
         // one must fail and the other must success
         expect(results.filter(o => !o.success)).toHaveLength(1);
         expect(results.filter(o => o.success)).toHaveLength(1);
+
+
+        const results2 = await manager.for(recipients).notify((new TestNotification(true))).send();
+        expect(results2).toHaveLength(1);
+        // // one must fail and the other must success
+        // expect(results2.filter(o => !o.success)).toHaveLength(1);
+        // expect(results2.filter(o => o.success)).toHaveLength(1);
     });
 });
